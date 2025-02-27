@@ -26,6 +26,7 @@ variable "local_ip" {
 variable "ansible_inventory_path" {
   description = "Location of the ansible inventory.ini file we output "
   type        = string
+  default     = "../../../ansible/inventory.ini"
 }
 
 # Define the key name once
