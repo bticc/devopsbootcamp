@@ -1,0 +1,92 @@
+---
+- name: Configure Amazon AMI EC2 Workstation
+  hosts: workstation
+  become: yes
+  vars:
+    ssh_port: 22
+
+  tasks:
+    - name: Grant ec2-user sudo privileges
+      user:
+        name: ec2-user
+        shell: /bin/bash
+        groups: wheel
+        append: yes
+        password: "{{ lookup('env', 'ANSIBLE_PASSWORD') | password_hash('sha512') }}"
+
+    - name: Add SSH key for ec2-user
+      authorized_key:
+        user: ec2-user
+        key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+
+    - name: Harden SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: "^#?PermitRootLogin", line: "PermitRootLogin no" }
+        - { regexp: "^#?PasswordAuthentication", line: "PasswordAuthentication no" }
+      notify: Restart SSH
+
+    - name: Ensure SSH is running
+      service:
+        name: sshd
+        state: started
+        enabled: yes
+
+    - name: Update all packages
+      yum:
+        name: "*"
+        state: latest
+
+    - name: Install essential tools
+      yum:
+        name:
+          - awscli
+          - ansible
+          - docker
+          - git
+          - htop
+          - unzip
+          - vim
+          - wget
+          - yum-utils
+        state: present
+
+    - name: Start and enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add ec2-user to docker group
+      user:
+        name: ec2-user
+        groups: docker
+        append: yes
+
+    - name: Add HashiCorp repository
+      command: yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+      args:
+        creates: "/etc/yum.repos.d/hashicorp.repo"
+
+    - name: Install Terraform
+      yum:
+        name: terraform
+        state: present
+
+    - name: Verify Terraform installation
+      command: terraform version
+      register: terraform_version_output
+      changed_when: false
+
+    - name: Display Terraform version
+      debug:
+        msg: "Terraform version: {{ terraform_version_output.stdout }}"
+
+  handlers:
+    - name: Restart SSH
+      service:
+        name: sshd
+        state: restarted
